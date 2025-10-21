@@ -52,6 +52,11 @@ public class User implements UserDetails {
     }
 
     @Override
+    public String getPassword() {
+        return this.password;  // Debe devolver el campo password directamente
+    }
+
+    @Override
     public boolean isAccountNonExpired() {
         return true;
     }
