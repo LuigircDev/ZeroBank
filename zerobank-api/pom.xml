@@ -4,8 +4,8 @@
          xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
     <modelVersion>4.0.0</modelVersion>
 
-    <groupId>com.zerobank.qa</groupId>
-    <artifactId>zerobank-qa-automation</artifactId>
+    <groupId>com.zerobank.api</groupId>
+    <artifactId>zerobank-api</artifactId>
     <version>1.0-SNAPSHOT</version>
 
     <properties>
