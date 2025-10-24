@@ -8,11 +8,15 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 import java.net.ConnectException;
+import java.util.Map;
 
 import static io.restassured.RestAssured.given;
 import static org.hamcrest.Matchers.equalTo;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 
 public class UserTests {
+
+    private static String authToken;
 
     @BeforeAll
     static void setup() {
@@ -23,47 +27,83 @@ public class UserTests {
 
         // 2. Health Check: Verificamos si la API está activa antes de correr las pruebas.
         try {
-            // Hacemos una llamada simple a un endpoint que sabemos que debería existir.
-            // La opción .head() es ligera, no necesita procesar un body.
-            given().head("/users").then().assertThat().statusCode(200);
+            given()
+                    .when()
+                    .get("/auth/health") // Usamos el nuevo endpoint público de salud
+                    .then()
+                    .statusCode(200)
+                    .body(equalTo("API is up and running"));
         } catch (Exception e) {
-            // Si la excepción es porque la conexión fue rechazada...
             if (e.getCause() instanceof ConnectException) {
-                // Lanzamos una excepción clara que detiene todas las pruebas de la clase.
-                // Assumptions.abort() es una forma limpia de hacerlo en JUnit 5.
                 Assumptions.abort(
                         "ABORTANDO PRUEBAS: No se pudo conectar a la API en " + RestAssured.baseURI + ":" + RestAssured.port + ". " +
                                 "Por favor, asegúrate de que la aplicación 'zerobank-api' esté en ejecución."
                 );
             }
-            // Si es otra excepción, la dejamos pasar para que la prueba falle normalmente.
             throw e;
         }
+
+        // 3. Autenticación: Obtener el token para todas las pruebas
+        // Creamos el JSON para el login
+        Map<String, String> loginPayload = Map.of(
+                "email", "luigi@mail.com", // Usuario de tu data.sql
+                "password", "password123"   // Contraseña de tu data.sql
+        );
+
+        authToken = given()
+                .contentType(ContentType.JSON)
+                .body(loginPayload)
+                .when()
+                .post("/auth/login")
+                .then()
+                .statusCode(200)
+                .extract()
+                .path("token"); // Extrae el token de la respuesta {"token": "..."}
+
+        // Verificamos que el token no sea nulo
+        assertNotNull(authToken, "El token de autenticación no debe ser nulo");
     }
 
     @Test
-    @DisplayName("Debería obtener los detalles de la cuenta para un usuario existente")
-    void shouldGetUserAccountDetailsForExistingUser() {
-        // Usamos el patrón Given-When-Then, que es muy legible.
-
+    @DisplayName("Debe obtener los detalles de la cuenta propia (Happy Path)")
+    void shouldGetOwnAccountDetails() {
         given()
-                // GIVEN (Dado): La pre-condición. En este caso, no hay headers o body complejos.
+                .auth().oauth2(authToken) // Envía el token como "Bearer <token>"
                 .accept(ContentType.JSON)
-                .pathParam("userId", 1) // Parámetro para reemplazar {userId} en la URL.
-
+                .pathParam("userId", 1) // Luigi (ID 1) pide su propia cuenta
                 .when()
-                // WHEN (Cuando): La acción que queremos probar.
                 .get("/users/{userId}/account")
-
                 .then()
-                // THEN (Entonces): Las verificaciones o "assertions".
                 .assertThat()
-                .statusCode(200) // 1. Verificar que el código de estado es 200 (OK).
-                .contentType(ContentType.JSON) // 2. Verificar que la respuesta es de tipo JSON.
-                .body("id", equalTo(1)) // 3. Verificar que el ID de la cuenta es 1.
-                .body("balance", equalTo(1000.00f)); // 4. Verificar que el balance es 1000.00.
-        //    Usamos 'f' para tratarlo como float,
-        //    que es como RestAssured lo interpreta por defecto.
+                .statusCode(200)
+                .contentType(ContentType.JSON)
+                .body("id", equalTo(1))
+                .body("balance", equalTo(1000.00f)); // Verificamos el balance
+    }
+
+    @Test
+    @DisplayName("Debe fallar con 403 (Forbidden) al intentar ver la cuenta de otro usuario")
+    void shouldBeForbiddenFromGettingOtherUserAccount() {
+        given()
+                .auth().oauth2(authToken) // Autenticado como Luigi (ID 1)
+                .pathParam("userId", 2) // Intentando ver la cuenta de Mario (ID 2)
+                .when()
+                .get("/users/{userId}/account")
+                .then()
+                .assertThat()
+                .statusCode(403); // Esperamos "Forbidden"
+    }
+
+    @Test
+    @DisplayName("Debe fallar con 401 (Unauthorized) si no se envía token")
+    void shouldBeUnauthorizedWithoutToken() {
+        given()
+                // Sin token de autenticación
+                .pathParam("userId", 1)
+                .when()
+                .get("/users/{userId}/account")
+                .then()
+                .assertThat()
+                .statusCode(401); // Esperamos "Unauthorized"
     }
 }
-
